@@ -1,8 +1,8 @@
 # ---------------- WAF policy ----------------
-resource "azurerm_web_application_firewall_policy" "lab" {
-  name                = "wafp-${var.prefix}"
-  location            = azurerm_resource_group.lab.location
-  resource_group_name = azurerm_resource_group.lab.name
+resource "azurerm_web_application_firewall_policy" "this" {
+  name                = var.waf_policy_name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   tags                = var.tags
 
   custom_rules {
@@ -40,16 +40,18 @@ resource "azurerm_web_application_firewall_policy" "lab" {
 }
 
 # ---------------- Public IP ----------------
-resource "azurerm_public_ip" "appgw" {
-  name                = "pip-agw-${var.prefix}"
-  location            = azurerm_resource_group.lab.location
-  resource_group_name = azurerm_resource_group.lab.name
+resource "azurerm_public_ip" "this" {
+  name                = var.public_ip_name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   sku                 = "Standard"
   allocation_method   = "Static"
   tags                = var.tags
 }
 
 # ---------------- Application Gateway ----------------
+# Listener/pool/rule below are placeholders; AGIC manages them at runtime,
+# hence the ignore_changes block.
 locals {
   agw_feip     = "appGatewayFrontendIP"
   agw_port_80  = "port_80"
@@ -59,17 +61,17 @@ locals {
   agw_rule     = "defaultrule"
 }
 
-resource "azurerm_application_gateway" "lab" {
-  name                = local.appgw_name
-  location            = azurerm_resource_group.lab.location
-  resource_group_name = azurerm_resource_group.lab.name
-  firewall_policy_id  = azurerm_web_application_firewall_policy.lab.id
+resource "azurerm_application_gateway" "this" {
+  name                = var.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  firewall_policy_id  = azurerm_web_application_firewall_policy.this.id
   tags                = var.tags
 
   sku {
     name     = "WAF_v2"
     tier     = "WAF_v2"
-    capacity = var.appgw_capacity
+    capacity = var.capacity
   }
 
   ssl_policy {
@@ -79,12 +81,12 @@ resource "azurerm_application_gateway" "lab" {
 
   gateway_ip_configuration {
     name      = "appGatewayIpConfig"
-    subnet_id = azurerm_subnet.appgw.id
+    subnet_id = var.subnet_id
   }
 
   frontend_ip_configuration {
     name                 = local.agw_feip
-    public_ip_address_id = azurerm_public_ip.appgw.id
+    public_ip_address_id = azurerm_public_ip.this.id
   }
 
   frontend_port {
@@ -138,10 +140,10 @@ resource "azurerm_application_gateway" "lab" {
   }
 }
 
-resource "azurerm_monitor_diagnostic_setting" "appgw" {
-  name                           = "appgw-to-law"
-  target_resource_id             = azurerm_application_gateway.lab.id
-  log_analytics_workspace_id     = azurerm_log_analytics_workspace.lab.id
+resource "azurerm_monitor_diagnostic_setting" "this" {
+  name                          = "appgw-to-law"
+  target_resource_id             = azurerm_application_gateway.this.id
+  log_analytics_workspace_id     = var.log_analytics_workspace_id
   log_analytics_destination_type = "Dedicated"
 
   enabled_log {

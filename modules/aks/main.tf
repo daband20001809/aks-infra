@@ -1,8 +1,8 @@
-resource "azurerm_kubernetes_cluster" "lab" {
-  name                = local.aks_name
-  location            = azurerm_resource_group.lab.location
-  resource_group_name = azurerm_resource_group.lab.name
-  dns_prefix          = local.aks_name
+resource "azurerm_kubernetes_cluster" "this" {
+  name                = var.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  dns_prefix          = var.name
   kubernetes_version  = var.kubernetes_version
   sku_tier            = "Free"
   tags                = var.tags
@@ -10,7 +10,7 @@ resource "azurerm_kubernetes_cluster" "lab" {
   default_node_pool {
     name                        = "system"
     vm_size                     = var.node_vm_size
-    vnet_subnet_id              = azurerm_subnet.aks.id
+    vnet_subnet_id              = var.aks_subnet_id
     auto_scaling_enabled        = true
     min_count                   = var.node_min_count
     max_count                   = var.node_max_count
@@ -33,7 +33,7 @@ resource "azurerm_kubernetes_cluster" "lab" {
     dns_service_ip    = var.dns_service_ip
     load_balancer_sku = "standard"
   }
-  
+
   node_provisioning_profile {
     mode               = "Manual"
     default_node_pools = "Auto"
@@ -41,13 +41,13 @@ resource "azurerm_kubernetes_cluster" "lab" {
 
   # Container Insights
   oms_agent {
-    log_analytics_workspace_id      = azurerm_log_analytics_workspace.lab.id
+    log_analytics_workspace_id      = var.log_analytics_workspace_id
     msi_auth_for_monitoring_enabled = true
   }
 
-  # Add-on AGIC, trỏ vào App Gateway đã tạo
+  # AGIC add-on, pointing at the existing App Gateway
   ingress_application_gateway {
-    gateway_id = azurerm_application_gateway.lab.id
+    gateway_id = var.appgw_id
   }
 
   lifecycle {
@@ -57,27 +57,27 @@ resource "azurerm_kubernetes_cluster" "lab" {
 
 # ---------------- Role assignments ----------------
 locals {
-  agic_object_id = azurerm_kubernetes_cluster.lab.ingress_application_gateway[0].ingress_application_gateway_identity[0].object_id
+  agic_object_id = azurerm_kubernetes_cluster.this.ingress_application_gateway[0].ingress_application_gateway_identity[0].object_id
 }
 
 resource "azurerm_role_assignment" "kubelet_acr_pull" {
-  scope                            = azurerm_container_registry.lab.id
+  scope                            = var.acr_id
   role_definition_name             = "AcrPull"
-  principal_id                     = azurerm_kubernetes_cluster.lab.kubelet_identity[0].object_id
+  principal_id                     = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
   principal_type                   = "ServicePrincipal"
   skip_service_principal_aad_check = true
 }
 
 resource "azurerm_role_assignment" "aks_subnet_network" {
-  scope                            = azurerm_subnet.aks.id
+  scope                            = var.aks_subnet_id
   role_definition_name             = "Network Contributor"
-  principal_id                     = azurerm_kubernetes_cluster.lab.identity[0].principal_id
+  principal_id                     = azurerm_kubernetes_cluster.this.identity[0].principal_id
   principal_type                   = "ServicePrincipal"
   skip_service_principal_aad_check = true
 }
 
 resource "azurerm_role_assignment" "agic_appgw" {
-  scope                            = azurerm_application_gateway.lab.id
+  scope                            = var.appgw_id
   role_definition_name             = "Contributor"
   principal_id                     = local.agic_object_id
   principal_type                   = "ServicePrincipal"
@@ -85,7 +85,7 @@ resource "azurerm_role_assignment" "agic_appgw" {
 }
 
 resource "azurerm_role_assignment" "agic_rg_reader" {
-  scope                            = azurerm_resource_group.lab.id
+  scope                            = var.resource_group_id
   role_definition_name             = "Reader"
   principal_id                     = local.agic_object_id
   principal_type                   = "ServicePrincipal"
@@ -93,7 +93,7 @@ resource "azurerm_role_assignment" "agic_rg_reader" {
 }
 
 resource "azurerm_role_assignment" "agic_appgw_subnet" {
-  scope                            = azurerm_subnet.appgw.id
+  scope                            = var.appgw_subnet_id
   role_definition_name             = "Network Contributor"
   principal_id                     = local.agic_object_id
   principal_type                   = "ServicePrincipal"
